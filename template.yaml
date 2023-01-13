@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  CR Terrenos
+
+Parameters:
+  StageName:
+    Type: String
+    Default: "Dev"
+    AllowedValues: ["Dev", "Prod"]
+
+  Region:
+    Description: "The AWS region that will be used for the environment"
+    Type: String
+
+  Table:
+    Type: String
+    Default: Estate
+
+  S3Bucket:
+    Type: String
+    Description: "The name of the S3 bucket"
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 10
+    MemorySize: 128
+    Runtime: python3.8
+    Handler: app.lambda_handler
+    Architectures:
+      - x86_64
+    Layers:
+      - !Ref DependenciesLayer
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref StageName
+        S3_BUCKET: !Ref S3Bucket
+        REGION: !Ref Region
+        DYNAMODB_TABLE: !Ref Table
+
+  Api:
+    TracingEnabled: false
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+
+Resources:
+  DependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: dependencies
+      Description: Dependencies for CR Terrenos
+      ContentUri: dependencies/
+      CompatibleRuntimes:
+        - python3.8
+      RetentionPolicy: Retain
+    Metadata:
+      BuildMethod: python3.8
+
+  APIGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName:
+        Ref: StageName
+      Tags:
+        "app": "cr_terrenos"
+        "region": !Ref Region
+        "environment": !Ref StageName
+
+  S3UploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - GET
+              - POST
+              - PUT
+              - HEAD
+            AllowedOrigins:
+              - "*"
+
+  EstateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      TableName: !Ref Table
+
+  EstateList:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/estate/list/
+      Description: Lists all the estates
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EstateTable
+      Events:
+        List:
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /api/v1/estate
+            Method: get
+
+  EstateCreate:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/estate/create/
+      Description: Creates a new estate
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EstateTable
+      Events:
+        List:
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /api/v1/estate
+            Method: post

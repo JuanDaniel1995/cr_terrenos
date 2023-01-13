@@ -1,0 +1,2 @@
+requests
+lambda-handlers==3.0.8
